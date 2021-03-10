@@ -1,12 +1,172 @@
 package treemess
 
 import (
+	//"fmt"
+	"crypto/rand"
+	"math/big"
 	"sync"
-        "crypto/rand"
-        "math/big"
 )
 
 type TreeMess struct {
+	Id string
+
+	in        chan Mess
+	out       map[string]chan Mess
+	listeners []func(string, interface{})
+	maps      []func(string, interface{}) (string, interface{})
+	mut       *sync.Mutex
+}
+
+type Mess struct {
+	Channel string
+	SrcId   string
+	Data    interface{}
+}
+
+func NewTreeMess() *TreeMess {
+	id, _ := genRandomCode(32)
+
+	in := make(chan Mess)
+	out := make(map[string]chan Mess)
+
+	tm := &TreeMess{
+		Id: id,
+
+		in:        in,
+		out:       out,
+		listeners: []func(string, interface{}){},
+		maps:      []func(string, interface{}) (string, interface{}){},
+		mut:       &sync.Mutex{},
+	}
+
+	go tm.handleMessages()
+
+	return tm
+}
+
+func (t *TreeMess) handleMessages() {
+	for inMessage := range t.in {
+
+		//fmt.Println(t.Id, inMessage)
+
+		outMessage := inMessage
+
+		for _, mapFunc := range t.getMaps() {
+			channel, data := mapFunc(outMessage.Channel, outMessage.Data)
+			outMessage.Channel = channel
+			outMessage.Data = data
+		}
+
+		for _, listener := range t.getListeners() {
+			//fmt.Println(t.Id, "attempt send listener", inMessage)
+			if outMessage.Channel != "" {
+				//fmt.Println(t.Id, "attempt send listener", inMessage)
+				listener(outMessage.Channel, outMessage.Data)
+			}
+		}
+
+		for id, outChannel := range t.getOutChannels() {
+			//fmt.Println(t.Id, "check", id, inMessage)
+			if outMessage.Channel != "" && id != inMessage.SrcId {
+				//fmt.Println(t.Id, "send", id, inMessage)
+				outMessage.SrcId = t.Id
+				outChannel <- outMessage
+				//fmt.Println(t.Id, "done", id, inMessage)
+			}
+		}
+	}
+}
+
+func (t *TreeMess) Send(channel string, inMessage interface{}) {
+	msg := Mess{
+		Channel: channel,
+		SrcId:   t.Id,
+		Data:    inMessage,
+	}
+
+	// TODO: this could be dangerous
+	go func() {
+		t.in <- msg
+	}()
+}
+
+func (t *TreeMess) Listen(callback func(string, interface{})) {
+	t.mut.Lock()
+	defer t.mut.Unlock()
+
+	t.listeners = append(t.listeners, callback)
+}
+
+func (t *TreeMess) Map(callback func(string, interface{}) (string, interface{})) {
+	t.mut.Lock()
+	defer t.mut.Unlock()
+
+	t.maps = append(t.maps, callback)
+}
+
+func (t *TreeMess) Branch() *TreeMess {
+
+	t.mut.Lock()
+	defer t.mut.Unlock()
+
+	newTm := NewTreeMess()
+
+	newTm.out[t.Id] = t.in
+	t.out[newTm.Id] = newTm.in
+
+	return newTm
+}
+
+func (t *TreeMess) BranchWithId(id string) *TreeMess {
+	t.mut.Lock()
+	defer t.mut.Unlock()
+
+	newTm := NewTreeMess()
+	newTm.Id = id
+
+	newTm.out[t.Id] = t.in
+	t.out[newTm.Id] = newTm.in
+
+	return newTm
+}
+
+func (t *TreeMess) getListeners() []func(string, interface{}) {
+	t.mut.Lock()
+	defer t.mut.Unlock()
+
+	listeners := []func(string, interface{}){}
+
+	for _, listener := range t.listeners {
+		listeners = append(listeners, listener)
+	}
+
+	return listeners
+}
+
+func (t *TreeMess) getOutChannels() map[string]chan Mess {
+	t.mut.Lock()
+	defer t.mut.Unlock()
+
+	out := make(map[string]chan Mess)
+
+	for k, v := range t.out {
+		out[k] = v
+	}
+
+	return out
+}
+
+func (t *TreeMess) getMaps() []func(string, interface{}) (string, interface{}) {
+	t.mut.Lock()
+	defer t.mut.Unlock()
+
+	mapFuncs := []func(string, interface{}) (string, interface{}){}
+
+	for _, mapFunc := range t.maps {
+		mapFuncs = append(mapFuncs, mapFunc)
+	}
+
+	return mapFuncs
 }
 
 type PubSub struct {
@@ -151,6 +311,7 @@ func (ps *PubSub) getParentChannel(channel string) string {
 }
 
 const chars string = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
 func genRandomCode(length int) (string, error) {
 	id := ""
 	for i := 0; i < length; i++ {
