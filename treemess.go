@@ -1,6 +1,7 @@
 package treemess
 
 import (
+	"time"
 	//"fmt"
 	"crypto/rand"
 	"math/big"
@@ -61,7 +62,8 @@ func (t *TreeMess) handleMessages() {
 			//fmt.Println(t.Id, "attempt send listener", inMessage)
 			if outMessage.Channel != "" {
 				//fmt.Println(t.Id, "attempt send listener", inMessage)
-				listener(outMessage.Channel, outMessage.Data)
+				// TODO: I feel like we have too many go routines being used in TreeMess.
+				go listener(outMessage.Channel, outMessage.Data)
 			}
 		}
 
@@ -70,7 +72,11 @@ func (t *TreeMess) handleMessages() {
 			if outMessage.Channel != "" && id != inMessage.SrcId {
 				//fmt.Println(t.Id, "send", id, inMessage)
 				outMessage.SrcId = t.Id
-				outChannel <- outMessage
+				select {
+				case outChannel <- outMessage:
+				case <-time.After(1 * time.Second):
+					panic("Timeout sending")
+				}
 				//fmt.Println(t.Id, "done", id, inMessage)
 			}
 		}
@@ -84,10 +90,7 @@ func (t *TreeMess) Send(channel string, inMessage interface{}) {
 		Data:    inMessage,
 	}
 
-	// TODO: this could be dangerous
-	go func() {
-		t.in <- msg
-	}()
+	t.in <- msg
 }
 
 func (t *TreeMess) Listen(callback func(string, interface{})) {
