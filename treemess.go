@@ -13,9 +13,14 @@ type TreeMess struct {
 
 	in        chan internalMessage
 	out       map[string]chan internalMessage
-	listeners []func(string, interface{})
+	listeners []chan Message
 	maps      []func(string, interface{}) (string, interface{})
 	mut       *sync.Mutex
+}
+
+type Message struct {
+	Channel string      `json:"channel"`
+	Data    interface{} `json:"data"`
 }
 
 type internalMessage struct {
@@ -35,7 +40,7 @@ func NewTreeMess() *TreeMess {
 
 		in:        in,
 		out:       out,
-		listeners: []func(string, interface{}){},
+		listeners: []chan Message{},
 		maps:      []func(string, interface{}) (string, interface{}){},
 		mut:       &sync.Mutex{},
 	}
@@ -63,7 +68,13 @@ func (t *TreeMess) handleMessages() {
 			if outMessage.Channel != "" {
 				//fmt.Println(t.Id, "attempt send listener", inMessage)
 				// TODO: I feel like we have too many go routines being used in TreeMess.
-				go listener(outMessage.Channel, outMessage.Data)
+				go func() {
+					msg := Message{
+						Channel: outMessage.Channel,
+						Data:    outMessage.Data,
+					}
+					listener <- msg
+				}()
 			}
 		}
 
@@ -93,11 +104,11 @@ func (t *TreeMess) Send(channel string, inMessage interface{}) {
 	t.in <- msg
 }
 
-func (t *TreeMess) Listen(callback func(string, interface{})) {
+func (t *TreeMess) Listen(ch chan Message) {
 	t.mut.Lock()
 	defer t.mut.Unlock()
 
-	t.listeners = append(t.listeners, callback)
+	t.listeners = append(t.listeners, ch)
 }
 
 func (t *TreeMess) Map(callback func(string, interface{}) (string, interface{})) {
@@ -133,11 +144,11 @@ func (t *TreeMess) BranchWithId(id string) *TreeMess {
 	return newTm
 }
 
-func (t *TreeMess) getListeners() []func(string, interface{}) {
+func (t *TreeMess) getListeners() []chan Message {
 	t.mut.Lock()
 	defer t.mut.Unlock()
 
-	listeners := []func(string, interface{}){}
+	listeners := []chan Message{}
 
 	for _, listener := range t.listeners {
 		listeners = append(listeners, listener)
