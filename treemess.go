@@ -18,17 +18,10 @@ type TreeMess struct {
 	mut       *sync.Mutex
 }
 
-type Message struct {
-	Channel string      `json:"channel"`
-	Type    string      `json:"type"`
-	Data    interface{} `json:"data"`
-	SrcId   string      `json:"srcId"`
-}
-
 type internalMessage struct {
 	Channel string
-	SrcId   string
 	Data    interface{}
+	SrcId   string
 }
 
 func NewTreeMess() *TreeMess {
