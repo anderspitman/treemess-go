@@ -11,14 +11,14 @@ import (
 type TreeMess struct {
 	Id string
 
-	in        chan Mess
-	out       map[string]chan Mess
+	in        chan internalMessage
+	out       map[string]chan internalMessage
 	listeners []func(string, interface{})
 	maps      []func(string, interface{}) (string, interface{})
 	mut       *sync.Mutex
 }
 
-type Mess struct {
+type internalMessage struct {
 	Channel string
 	SrcId   string
 	Data    interface{}
@@ -27,8 +27,8 @@ type Mess struct {
 func NewTreeMess() *TreeMess {
 	id, _ := genRandomCode(32)
 
-	in := make(chan Mess)
-	out := make(map[string]chan Mess)
+	in := make(chan internalMessage)
+	out := make(map[string]chan internalMessage)
 
 	tm := &TreeMess{
 		Id: id,
@@ -84,7 +84,7 @@ func (t *TreeMess) handleMessages() {
 }
 
 func (t *TreeMess) Send(channel string, inMessage interface{}) {
-	msg := Mess{
+	msg := internalMessage{
 		Channel: channel,
 		SrcId:   t.Id,
 		Data:    inMessage,
@@ -146,11 +146,11 @@ func (t *TreeMess) getListeners() []func(string, interface{}) {
 	return listeners
 }
 
-func (t *TreeMess) getOutChannels() map[string]chan Mess {
+func (t *TreeMess) getOutChannels() map[string]chan internalMessage {
 	t.mut.Lock()
 	defer t.mut.Unlock()
 
-	out := make(map[string]chan Mess)
+	out := make(map[string]chan internalMessage)
 
 	for k, v := range t.out {
 		out[k] = v
