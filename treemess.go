@@ -111,6 +111,19 @@ func (t *TreeMess) Listen(ch chan Message) {
 	t.listeners = append(t.listeners, ch)
 }
 
+func (t *TreeMess) ListenFunc(callback func(Message)) {
+
+	ch := make(chan Message)
+
+	t.Listen(ch)
+
+	go func() {
+		for msg := range ch {
+			callback(msg)
+		}
+	}()
+}
+
 func (t *TreeMess) Map(callback func(string, interface{}) (string, interface{})) {
 	t.mut.Lock()
 	defer t.mut.Unlock()
